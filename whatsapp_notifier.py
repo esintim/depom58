@@ -1,4 +1,5 @@
 import os
+import re
 import httpx
 from typing import Dict, Any, Optional
 from loguru import logger
@@ -18,18 +19,30 @@ class WhatsAppNotifier:
         """Fiyatı 1.850.000 TL şeklinde biçimlendirir."""
         return f"{price:,.0f} TL".replace(",", ".")
 
+    def _clean_url(self, raw_url: str) -> str:
+        """İlan adresini tertemiz, kısa ve hatasız hale getirir."""
+        if not raw_url:
+            return ""
+        # Soru işaretinden sonraki gereksiz takip kodlarını temizle
+        clean = raw_url.split("?")[0].strip()
+        return clean
+
+
     def format_new_listing_message(self, item: Dict[str, Any]) -> str:
-        """Yeni ilan için WhatsApp mesaj metni (*kalın*, emoji)."""
+        """Yeni ilan için WhatsApp mesaj metni."""
         title = item.get("title", "Satılık Daire")
         district = item.get("district", "Erdemli / Silifke")
         neighborhood = item.get("neighborhood", "")
         room = item.get("room_count", "1+1 / 2+1")
         m2 = item.get("m2", 0)
         price_fmt = self._format_price(item.get("price", 0))
-        url = item.get("url", "")
-        source = item.get("source", "Emlakjet / Sahibinden")
+        raw_url = item.get("url", "")
+        clean_url = self._clean_url(raw_url)
+        source = item.get("source", "Sahibinden.com")
+        lid = item.get("listing_id", "").replace("SH-", "").replace("EJ-", "")
 
         m2_text = f"📐 *Metrekare:* {m2} m²" if m2 > 0 else "📐 *Metrekare:* Belirtilmemiş"
+        id_text = f"🔢 *İlan No:* {lid}\n" if lid else ""
 
         lines = [
             "🏠 *YENİ DAİRE İLANI BİLDİRİMİ* 🏠",
@@ -40,11 +53,14 @@ class WhatsAppNotifier:
             f"💰 *Fiyat:* *{price_fmt}*",
             "",
             f"📌 *Başlık:* {title}",
+            id_text,
             f"🌐 *Kaynak:* {source}",
             "",
-            f"🔗 *İlana Git:* {url}"
+            "🔗 *İLAN LİNKİ:*",
+            f"{clean_url}"
         ]
         return "\n".join(lines)
+
 
     def format_price_drop_message(self, event: Dict[str, Any]) -> str:
         """Fiyatı düşen daire için WhatsApp indirim alarmı mesajı."""
@@ -54,8 +70,10 @@ class WhatsAppNotifier:
         neighborhood = item.get("neighborhood", "")
         room = item.get("room_count", "1+1 / 2+1")
         m2 = item.get("m2", 0)
-        url = item.get("url", "")
-        source = item.get("source", "Emlakjet / Sahibinden")
+        raw_url = item.get("url", "")
+        clean_url = self._clean_url(raw_url)
+        source = item.get("source", "Sahibinden.com")
+        lid = item.get("listing_id", "").replace("SH-", "").replace("EJ-", "")
 
         old_price_fmt = self._format_price(event.get("old_price", 0))
         new_price_fmt = self._format_price(event.get("new_price", 0))
@@ -63,6 +81,7 @@ class WhatsAppNotifier:
         drop_rate = event.get("drop_rate", 0.0)
 
         m2_text = f"📐 *Metrekare:* {m2} m²" if m2 > 0 else "📐 *Metrekare:* Belirtilmemiş"
+        id_text = f"🔢 *İlan No:* {lid}\n" if lid else ""
 
         lines = [
             "🚨 *FİYATI DÜŞEN DAİRE ALARMI!* 🚨",
@@ -76,11 +95,17 @@ class WhatsAppNotifier:
             m2_text,
             "",
             f"📌 *Başlık:* {title}",
+            id_text,
             f"🌐 *Kaynak:* {source}",
             "",
-            f"🔗 *İndirimli İlana Git:* {url}"
+            "🔗 *İNDİRİMLİ İLAN LİNKİ:*",
+            f"{clean_url}"
         ]
         return "\n".join(lines)
+
+
+
+
 
     async def send_event_notification(self, event: Dict[str, Any]) -> bool:
         """Bildirimi WhatsApp API üzerinden iletir (Fotoğraflı veya Metin)."""
